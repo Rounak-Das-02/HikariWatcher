@@ -19,7 +19,7 @@ class Watcher :
                 debug: bool = True,
                 loop: asyncio.BaseEventLoop = None,
                 default_logger: bool = True,
-                preload: bool = False,
+                preload: bool = True,
         ):
 
             self.bot = bot
@@ -135,21 +135,21 @@ class Watcher :
                 await asyncio.sleep(5)
                 await self.load(cog_dir)
 
-            except lightbulb.errors.CommandAlreadyExists as exc:
-                self.plugin_error(exc)
+            except lightbulb.errors.CommandAlreadyExists as e:
+                self.plugin_error(e)
                 logging.error("Stopping the Bot due to existing command name in : " + cog_dir)
-                logging.error("Change your plugin name and re-run the bot")
-                os.execv(sys.executable, ['python3'] + [sys.argv[0]])
+                self.restart()
 
             except lightbulb.errors.ExtensionMissingLoad:
                 logging.error("The Plugin doesn't have any load function.: " + cog_dir)
-                os.execv(sys.executable, ['python3'] + [sys.argv[0]])
+                self.restart()
                 
+            except ValueError as e: ## For REGEX error in which case bot doesn't unload and load again !
+                self.plugin_error(e)
+                self.restart()
 
-            except Exception as exc:
-                self.plugin_error(exc)
-                # logging.error("LOAD ERROR, Unloading ...")
-                # await self.unload(cog_dir)
+            except Exception as e:
+                self.plugin_error(e)
 
             else:
                 logging.info(f"Cog Loaded: {cog_dir}")
@@ -159,33 +159,43 @@ class Watcher :
             try:
                 self.bot.unload_extensions(cog_dir)
             except lightbulb.errors.ExtensionNotLoaded:
-                logging.error("Extension not loaded . Loading Extension")
+                logging.error(f"Extension {cog_dir} not loaded. Loading Extension")
                 return
+
+            # except lightbulb.errors.Sa
             
             except lightbulb.errors.ExtensionMissingUnload:
-                logging.error("The Plugin doesn't have any unload function.: " + cog_dir)
-                os.execv(sys.executable, ['python3'] + [sys.argv[0]])
+                logging.error(f"The Plugin {cog_dir}doesn't have any unload function.")
+                self.restart()
 
-            except Exception as exc:
+            except Exception as e:
                 logging.error("UNLOAD ERROR")
-                self.plugin_error(exc)
-                os.execv(sys.executable, ['python3'] + [sys.argv[0]])
+                self.plugin_error(e)
+                self.restart()
+
+        ## Restarts the bot
+        def restart(self):
+            logging.info(" Restarting Bot now !! ")
+            os.execv(sys.executable, ['python3'] + [sys.argv[0]])
 
         ## reload_extensions has some bug in the actual file.
         async def reload(self, cog_dir: str):
             try:
                 self.bot.reload_extensions(cog_dir)
-            except Exception as exc:
-                self.plugin_error(exc)
-                
+            except Exception as e:
+                self.plugin_error(e)
+        
+        ## Displays any error in plugin
         @staticmethod
-        def plugin_error(exc: Exception):
-            logging.exception(exc)
+        def plugin_error(e: Exception):
+            logging.exception(e)
 
 
         async def _preload(self):
             logging.info("Preloading...")
             for cog in {(file.stem, file) for file in Path(Path.cwd() / self.path).rglob("*.py")}:
+                if cog[0] == "__init__":
+                    continue
                 new_dir = self.get_dotted_plugin_path(cog[1])
                 await self.load(".".join([new_dir, cog[0]]))
 

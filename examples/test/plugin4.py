@@ -6,7 +6,7 @@ info_plugin = lightbulb.Plugin("Info")
 
 @info_plugin.command
 @lightbulb.command(
-    "hello", "Nothing"
+    "h", "Nothing"
 )
 @lightbulb.implements(lightbulb.PrefixCommand, lightbulb.SlashCommand)
 async def hello(ctx: lightbulb.Context) -> None:
