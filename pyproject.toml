@@ -1,0 +1,11 @@
+[build-system]
+requires = [
+    "setuptools>=42",
+    "wheel" ,
+    "hikari==2.0.0.dev105",
+    "hikari-lightbulb==2.1.3",
+    "python-dotenv==0.19.2",
+    "watchgod==0.7"
+]
+
+build-backend = "setuptools.build_meta"
