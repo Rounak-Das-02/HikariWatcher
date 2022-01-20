@@ -19,6 +19,7 @@ class Watcher(bot: lightbulb.BotApp,
                 loop: asyncio.BaseEventLoop = None,
                 default_logger: bool = True,
                 preload: bool = True,
+                restart: bool = True
         ):
 ```
 
@@ -28,7 +29,7 @@ class Watcher(bot: lightbulb.BotApp,
 4.  loop: Custom event loop. Defaults to the current running event loop.
 5.  default_logger - Whether to use default logger or not. (Only default is available right now)
 6.  preload - Preloads all the extensions. Defaults to True
-
+7.  restart - If any serious issue arises (like REGEX errors in slash commands, etc), it restarts the bot. Defaults to True. If set to False, any serious issue would stop the execution right away.
 
 
 Run testRunner.py to get run tests on example plugins.
