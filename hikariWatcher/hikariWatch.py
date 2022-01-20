@@ -1,6 +1,7 @@
+import time
 import hikari
 import lightbulb
-
+import platform
 import asyncio
 import logging
 import os
@@ -20,6 +21,7 @@ class Watcher :
                 loop: asyncio.BaseEventLoop = None,
                 default_logger: bool = True,
                 preload: bool = True,
+                _restart : bool = True,
         ):
 
             self.bot = bot
@@ -28,6 +30,7 @@ class Watcher :
             self.loop = loop
             self.default_logger = default_logger
             self.preload = preload
+            self._restart = _restart
 
         @staticmethod
         def get_plugin_name(path : str) -> str:
@@ -35,7 +38,7 @@ class Watcher :
             return path.split(os.sep)[-1:][0][:-3]
 
         def get_dotted_plugin_path(self, path: str) -> str:
-            """Returns the full dotted path that discord.py uses to load cog files."""
+            """Returns the full dotted path that hikari uses to load extension files."""
             _path = os.path.normpath(path)
             tokens = _path.split(os.sep)
             rtokens = list(reversed(tokens))
@@ -76,17 +79,17 @@ class Watcher :
                             filename = self.get_plugin_name(change_path)
 
                             new_dir = self.get_dotted_plugin_path(change_path)
-                            cog_dir = f"{new_dir}.{filename.lower()}" if new_dir else f"{self.path}.{filename.lower()}"
+                            extension_dir = f"{new_dir}.{filename.lower()}" if new_dir else f"{self.path}.{filename.lower()}"
 
                             if change_type == Change.deleted:
-                                await self.unload(cog_dir)
+                                await self.unload(extension_dir)
                             elif change_type == Change.added:
-                                await self.load(cog_dir)
+                                await self.load(extension_dir)
                             elif change_type == Change.modified and change_type != (Change.added or Change.deleted):
-                                # await self.reload(cog_dir)
-                                await self.unload(cog_dir)
+                                # await self.reload(extension_dir)
+                                await self.unload(extension_dir)
                                 await asyncio.sleep(1) ## To avoid any race-condition
-                                await self.load(cog_dir)
+                                await self.load(extension_dir)
 
                 except FileNotFoundError:
                     continue
@@ -124,24 +127,24 @@ class Watcher :
             return any([(self.debug and __debug__), not self.debug])
 
 
-        async def load(self, cog_dir: str):
-            """Loads a cog file into the client."""
+        async def load(self, extension_dir: str):
+            """Loads a extension file into the client."""
             try:
-                self.bot.load_extensions(cog_dir)
+                self.bot.load_extensions(extension_dir)
                 
             except lightbulb.errors.ExtensionAlreadyLoaded:
                 logging.info("Reloading in 5 seconds because Extension is Already loaded")
-                await self.unload(cog_dir)
+                await self.unload(extension_dir)
                 await asyncio.sleep(5)
-                await self.load(cog_dir)
+                await self.load(extension_dir)
 
             except lightbulb.errors.CommandAlreadyExists as e:
                 self.plugin_error(e)
-                logging.error("Stopping the Bot due to existing command name in : " + cog_dir)
+                logging.error("Error due to existing command name in : " + extension_dir)
                 self.restart()
 
             except lightbulb.errors.ExtensionMissingLoad:
-                logging.error("The Plugin doesn't have any load function.: " + cog_dir)
+                logging.error("The Plugin doesn't have any load function.: " + extension_dir)
                 self.restart()
                 
             except ValueError as e: ## For REGEX error in which case bot doesn't unload and load again !
@@ -152,20 +155,19 @@ class Watcher :
                 self.plugin_error(e)
 
             else:
-                logging.info(f"Cog Loaded: {cog_dir}")
+                logging.info(f"Extension Loaded: {extension_dir}")
 
 
-        async def unload(self, cog_dir: str):
+        async def unload(self, extension_dir: str):
             try:
-                self.bot.unload_extensions(cog_dir)
+                self.bot.unload_extensions(extension_dir)
             except lightbulb.errors.ExtensionNotLoaded:
-                logging.error(f"Extension {cog_dir} not loaded. Loading Extension")
+                logging.error(f"Extension {extension_dir} not loaded. Loading Extension")
                 return
 
-            # except lightbulb.errors.Sa
             
             except lightbulb.errors.ExtensionMissingUnload:
-                logging.error(f"The Plugin {cog_dir}doesn't have any unload function.")
+                logging.error(f"The Plugin {extension_dir}doesn't have any unload function.")
                 self.restart()
 
             except Exception as e:
@@ -175,13 +177,45 @@ class Watcher :
 
         ## Restarts the bot
         def restart(self):
-            logging.info(" Restarting Bot now !! ")
-            os.execv(sys.executable, ['python3'] + [sys.argv[0]])
+            if not self._restart:
+                exit()
+
+            logging.info(f" Restarting the Bot in 5 seconds !!")
+            time.sleep(5.0)
+            executable = sys.executable
+            script_path = Path(sys.argv[0]).resolve()
+            args = sys.argv[1:]
+            main_package = sys.modules["__main__"].__package__
+
+            if main_package is None:
+                # Executed by filename
+                if platform.system() == "Windows":
+                    if not script_path.exists() and script_path.with_suffix(".exe").exists():
+                        # quart run
+                        executable = str(script_path.with_suffix(".exe"))
+                    else:
+                        # python run.py
+                        args.append(str(script_path))
+                else:
+                    if script_path.is_file() and os.access(script_path, os.X_OK):
+                        # hypercorn run:app --reload
+                        executable = str(script_path)
+                    else:
+                        # python run.py
+                        args.append(str(script_path))
+            else:
+                # Executed as a module e.g. python -m run
+                module = script_path.stem
+                import_name = main_package
+                if module != "__main__":
+                    import_name = f"{main_package}.{module}"
+                args[:0] = ["-m", import_name.lstrip(".")]
+            os.execv(executable, [executable] + args) 
 
         ## reload_extensions has some bug in the actual file.
-        async def reload(self, cog_dir: str):
+        async def reload(self, extension_dir: str):
             try:
-                self.bot.reload_extensions(cog_dir)
+                self.bot.reload_extensions(extension_dir)
             except Exception as e:
                 self.plugin_error(e)
         
@@ -193,11 +227,11 @@ class Watcher :
 
         async def _preload(self):
             logging.info("Preloading...")
-            for cog in {(file.stem, file) for file in Path(Path.cwd() / self.path).rglob("*.py")}:
-                if cog[0] == "__init__":
+            for extension in {(file.stem, file) for file in Path(Path.cwd() / self.path).rglob("*.py")}:
+                if extension[0] == "__init__":
                     continue
-                new_dir = self.get_dotted_plugin_path(cog[1])
-                await self.load(".".join([new_dir, cog[0]]))
+                new_dir = self.get_dotted_plugin_path(extension[1])
+                await self.load(".".join([new_dir, extension[0]]))
 
 
 
